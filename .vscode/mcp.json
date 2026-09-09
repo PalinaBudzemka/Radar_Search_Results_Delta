@@ -1,0 +1,14 @@
+{
+	"servers": {
+		"radar": {
+			"type": "http",
+			"url": "https://mcp.epam.com/mcp/radar"
+		},
+
+		"botcraft": {
+      		"type": "http",
+      		"url": "https://mcp.epam.com/mcp/botcraft"
+   		 }
+	}
+	
+}
