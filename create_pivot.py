@@ -1,7 +1,7 @@
 import pandas as pd
-import glob
 import os
 import sys
+from pathlib import Path
 from openpyxl import load_workbook
 from openpyxl.styles import Font, PatternFill
 from openpyxl.utils import get_column_letter
@@ -10,9 +10,14 @@ from datetime import datetime
 if len(sys.argv) > 1:
     input_file = sys.argv[1]
 else:
-    input_files = glob.glob("search_results/*.xlsx")
+    input_files = [
+        path for path in Path(".").rglob("*.xlsx")
+        if "RADAR Positions Dashboard" in path.name
+    ]
     if not input_files:
-        raise FileNotFoundError("No Excel files found in search_results")
+        raise FileNotFoundError(
+            'No Excel files found with "RADAR Positions Dashboard" in the filename'
+        )
 
     input_file = max(input_files, key=os.path.getmtime)
 
