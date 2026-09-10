@@ -8,6 +8,7 @@
 		"botcraft": {
       		"type": "http",
       		"url": "https://mcp.epam.com/mcp/botcraft"
+			
    		 }
 	}
 	

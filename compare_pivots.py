@@ -16,7 +16,7 @@ output_file = f"delta_results/delta_results_{timestamp}.xlsx"
 def find_latest_two_pivot_files():
     files = [
         path for path in Path(".").rglob("*.xlsx")
-        if "pivot_output" in path.name
+        if "pivot_output" in path.name and not path.name.startswith("~$")
     ]
 
     if len(files) < 2:
@@ -103,18 +103,24 @@ def compare_positions(latest_file, previous_file):
 
 
 def read_summary(file_path):
-    df = pd.read_excel(file_path, sheet_name="Summary")
+    workbook = pd.ExcelFile(file_path)
+    sheet_names = workbook.sheet_names
+    sheet_name = "Tracker" if "Tracker" in sheet_names else "Summary"
+    df = pd.read_excel(file_path, sheet_name=sheet_name)
 
-    required_columns = ["Customer", "Project", "Count of Position ID"]
+    if "Headcount" not in df.columns and "Count of Position ID" in df.columns:
+        df = df.rename(columns={"Count of Position ID": "Headcount"})
+
+    required_columns = ["Customer", "Project", "Headcount"]
 
     for column in required_columns:
         if column not in df.columns:
-            raise Exception(f"'{column}' column not found in Summary sheet of {file_path}")
+            raise Exception(f"'{column}' column not found in {sheet_name} sheet of {file_path}")
 
     df["Customer"] = df["Customer"].fillna("").astype(str).str.strip()
     df["Project"] = df["Project"].fillna("").astype(str).str.strip()
-    df["Count of Position ID"] = pd.to_numeric(
-        df["Count of Position ID"],
+    df["Headcount"] = pd.to_numeric(
+        df["Headcount"],
         errors="coerce"
     ).fillna(0).astype(int)
 
@@ -136,12 +142,12 @@ def compare_summary_tabs(latest_file, previous_file):
     latest_customers = latest_summary[latest_summary["Project"] == ""].copy()
     previous_customers = previous_summary[previous_summary["Project"] == ""].copy()
 
-    latest_customers = latest_customers[["Customer", "Count of Position ID"]].rename(
-        columns={"Count of Position ID": "Latest Count"}
+    latest_customers = latest_customers[["Customer", "Headcount"]].rename(
+        columns={"Headcount": "Latest Count"}
     )
 
-    previous_customers = previous_customers[["Customer", "Count of Position ID"]].rename(
-        columns={"Count of Position ID": "Previous Count"}
+    previous_customers = previous_customers[["Customer", "Headcount"]].rename(
+        columns={"Headcount": "Previous Count"}
     )
 
     customer_compare = previous_customers.merge(
@@ -191,12 +197,12 @@ def compare_summary_tabs(latest_file, previous_file):
     previous_projects = previous_summary[previous_summary["Project"] != ""].copy()
 
     latest_projects = latest_projects[
-        ["Customer", "Project", "Count of Position ID"]
-    ].rename(columns={"Count of Position ID": "Latest Count"})
+        ["Customer", "Project", "Headcount"]
+    ].rename(columns={"Headcount": "Latest Count"})
 
     previous_projects = previous_projects[
-        ["Customer", "Project", "Count of Position ID"]
-    ].rename(columns={"Count of Position ID": "Previous Count"})
+        ["Customer", "Project", "Headcount"]
+    ].rename(columns={"Headcount": "Previous Count"})
 
     project_compare = previous_projects.merge(
         latest_projects,
@@ -296,16 +302,24 @@ def format_workbook(file_path):
     increased_fill = PatternFill(start_color="D9EAD3", end_color="D9EAD3", fill_type="solid")
     decreased_fill = PatternFill(start_color="F4CCCC", end_color="F4CCCC", fill_type="solid")
 
+    hidden_sheets = {
+        "Delta Positions",
+        "New Projects",
+        "Project Closure",
+        "Ramp-Up",
+        "Ramp-Down",
+    }
+
     for ws in wb.worksheets:
         # Header formatting
         for cell in ws[1]:
             cell.font = Font(bold=True)
             cell.fill = header_fill
 
-        if ws.title == "Summary":
-            summary_headers = {cell.value: cell.column for cell in ws[1]}
-            project_column = summary_headers.get("Project")
-            customer_column = summary_headers.get("Customer")
+        if ws.title == "Tracker":
+            tracker_headers = {cell.value: cell.column for cell in ws[1]}
+            project_column = tracker_headers.get("Project")
+            customer_column = tracker_headers.get("Customer")
             if project_column and customer_column:
                 for row_number in range(2, ws.max_row + 1):
                     customer = ws.cell(row=row_number, column=customer_column).value
@@ -346,6 +360,9 @@ def format_workbook(file_path):
                     for cell in ws[row_number]:
                         cell.fill = fill
 
+        if ws.title in hidden_sheets:
+            ws.sheet_state = "hidden"
+
         # Auto-adjust column widths
         for column_cells in ws.columns:
             max_length = 0
@@ -368,73 +385,20 @@ def build_delta_summary(delta_positions_df, previous_file):
     project_counts = (
         current_positions.groupby(["Customer", "Project"], dropna=False)["Position ID"]
         .count()
-        .reset_index(name="Count of Position ID")
-    )
-    customer_totals = (
-        project_counts.groupby("Customer", dropna=False)["Count of Position ID"]
-        .sum()
-        .reset_index(name="Customer Total")
-        .sort_values(by=["Customer Total", "Customer"], ascending=[False, True])
+        .reset_index(name="Headcount")
     )
 
     previous_summary = read_summary(previous_file)
-    previous_counts = previous_summary.set_index(["Customer", "Project"])[
-        "Count of Position ID"
-    ].to_dict()
-    current_counts = project_counts.set_index(["Customer", "Project"])[
-        "Count of Position ID"
-    ].to_dict()
+    previous_counts = previous_summary.set_index(["Customer", "Project"])["Headcount"].to_dict()
 
-    all_keys = set(current_counts) | set(previous_counts)
-    customers = sorted({customer for customer, _ in all_keys})
-    current_customer_totals = current_positions.groupby("Customer")["Position ID"].count().to_dict()
-
-    summary_rows = []
-    for customer in sorted(
-        customers,
-        key=lambda name: (-current_customer_totals.get(name, 0), name),
-    ):
-        summary_rows.append({
-            "Customer": customer,
-            "Project": "",
-            "Count of Position ID": current_customer_totals.get(customer, 0),
-        })
-
-        customer_projects = sorted(
-            {
-                project
-                for project_customer, project in all_keys
-                if project_customer == customer and project != ""
-            },
-            key=lambda project: (-current_counts.get((customer, project), 0), project),
-        )
-        for project in customer_projects:
-            summary_rows.append({
-                "Customer": customer,
-                "Project": project,
-                "Count of Position ID": current_counts.get((customer, project), 0),
-            })
-
-    summary_rows.append({
-        "Customer": "Grand Total",
-        "Project": "",
-        "Count of Position ID": project_counts["Count of Position ID"].sum(),
-    })
-
-    summary_df = pd.DataFrame(summary_rows)
-    previous_grand_total = previous_summary[
-        previous_summary["Project"] == ""
-    ]["Count of Position ID"].sum()
+    project_counts = project_counts[
+        project_counts["Project"].notna() & (project_counts["Project"] != "")
+    ].copy()
 
     def get_headcount_status(row):
-        if row["Customer"] == "Grand Total":
-            previous_count = previous_grand_total
-        else:
-            previous_count = previous_counts.get(
-                (row["Customer"], row["Project"]), 0
-            )
+        previous_count = previous_counts.get((row["Customer"], row["Project"]), 0)
+        current_count = row["Headcount"]
 
-        current_count = row["Count of Position ID"]
         if current_count > 0 and previous_count == 0:
             return "New Project"
         if current_count > previous_count:
@@ -445,15 +409,26 @@ def build_delta_summary(delta_positions_df, previous_file):
             return "Project Closure"
         return "Unchanged"
 
-    summary_df["Headcount Status"] = summary_df.apply(get_headcount_status, axis=1)
-    return summary_df
+    project_counts["Headcount Status"] = project_counts.apply(get_headcount_status, axis=1)
+    project_counts = project_counts.sort_values(
+        by=["Headcount", "Customer", "Project"],
+        ascending=[False, True, True]
+    )
+
+    return project_counts[["Customer", "Project", "Headcount", "Headcount Status"]].reset_index(drop=True)
 
 
 def highlight_summary_changes(latest_file, previous_file, target_file):
     wb = load_workbook(target_file)
-    ws = wb["Summary"]
-    headers = {cell.value: cell.column for cell in ws[1]}
-    status_column = headers["Headcount Status"]
+    if "Tracker" not in wb.sheetnames:
+        return
+
+    ws = wb["Tracker"]
+    headers = [cell.value for cell in ws[1]]
+    if "Headcount Status" not in headers:
+        return
+
+    status_column = headers.index("Headcount Status") + 1
 
     increased_fill = PatternFill(
         start_color="D9EAF7", end_color="D9EAF7", fill_type="solid"
@@ -534,7 +509,7 @@ run_summary_df = pd.DataFrame({
 with pd.ExcelWriter(output_file, engine="openpyxl") as writer:
     run_summary_df.to_excel(writer, sheet_name="Run Summary", index=False)
     build_delta_summary(delta_positions_df, previous_file).to_excel(
-        writer, sheet_name="Summary", index=False
+        writer, sheet_name="Tracker", index=False
     )
     delta_positions_df.to_excel(writer, sheet_name="Delta Positions", index=False)
     new_projects_df.to_excel(writer, sheet_name="New Projects", index=False)

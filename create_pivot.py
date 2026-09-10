@@ -31,75 +31,48 @@ df = pd.read_excel(input_file, sheet_name="Positions")
 project_counts = (
     df.groupby(["Customer", "Project"], dropna=False)["Position ID"]
     .count()
-    .reset_index(name="Count of Position ID")
+    .reset_index(name="Headcount")
 )
 
-# Calculate total positions by Customer
-customer_totals = (
-    project_counts.groupby("Customer", dropna=False)["Count of Position ID"]
-    .sum()
-    .reset_index(name="Customer Total")
+# Sort tracker rows by Headcount descending, with Grand Total kept at the bottom.
+project_rows = project_counts.sort_values(
+    by=["Headcount", "Customer", "Project"],
+    ascending=[False, True, True]
 )
 
-# Sort customers by total count DESC
-customer_totals = customer_totals.sort_values(
-    by=["Customer Total", "Customer"],
-    ascending=[False, True]
-)
-
-# Build final summary rows
 summary_rows = []
-
-for _, customer_row in customer_totals.iterrows():
-    customer = customer_row["Customer"]
-    customer_total = customer_row["Customer Total"]
-
-    # Add customer total row
+for _, project_row in project_rows.iterrows():
     summary_rows.append({
-        "Customer": customer,
-        "Project": "",
-        "Count of Position ID": customer_total,
-        "Row Type": "Customer Total"
+        "Customer": project_row["Customer"],
+        "Project": project_row["Project"],
+        "Headcount": project_row["Headcount"],
+        "Row Type": "Project"
     })
 
-    # Get projects for this customer, sorted by count DESC
-    customer_projects = project_counts[project_counts["Customer"] == customer].sort_values(
-        by=["Count of Position ID", "Project"],
-        ascending=[False, True]
-    )
-
-    # Add project rows
-    for _, project_row in customer_projects.iterrows():
-        summary_rows.append({
-            "Customer": project_row["Customer"],
-            "Project": project_row["Project"],
-            "Count of Position ID": project_row["Count of Position ID"],
-            "Row Type": "Project"
-        })
-
 # Add Grand Total row
-grand_total = project_counts["Count of Position ID"].sum()
+grand_total = project_counts["Headcount"].sum()
 
 summary_rows.append({
     "Customer": "Grand Total",
     "Project": "",
-    "Count of Position ID": grand_total,
+    "Headcount": grand_total,
     "Row Type": "Grand Total"
 })
 
 summary_df = pd.DataFrame(summary_rows)
 
 # Keep Row Type only for formatting, not for final visible output
-visible_summary_df = summary_df[["Customer", "Project", "Count of Position ID"]]
+visible_summary_df = summary_df[["Customer", "Project", "Headcount"]]
 
 # Save original data + summary
 with pd.ExcelWriter(output_file, engine="openpyxl") as writer:
     df.to_excel(writer, sheet_name="Original Positions", index=False)
-    visible_summary_df.to_excel(writer, sheet_name="Summary", index=False)
+    visible_summary_df.to_excel(writer, sheet_name="Tracker", index=False)
 
 # Formatting
 wb = load_workbook(output_file)
-ws = wb["Summary"]
+ws = wb["Tracker"]
+ws.sheet_properties.tabColor = "FF00FF00"
 
 header_fill = PatternFill(start_color="D9EAF7", end_color="D9EAF7", fill_type="solid")
 subtotal_fill = PatternFill(start_color="EAF4E2", end_color="EAF4E2", fill_type="solid")
@@ -110,14 +83,9 @@ for cell in ws[1]:
     cell.font = Font(bold=True)
     cell.fill = header_fill
 
-# Format customer total rows and grand total row
+# Format grand total row
 for excel_row_number, row_type in enumerate(summary_df["Row Type"], start=2):
-    if row_type == "Customer Total":
-        for cell in ws[excel_row_number]:
-            cell.font = Font(bold=True)
-            cell.fill = subtotal_fill
-
-    elif row_type == "Grand Total":
+    if row_type == "Grand Total":
         for cell in ws[excel_row_number]:
             cell.font = Font(bold=True)
             cell.fill = grand_total_fill

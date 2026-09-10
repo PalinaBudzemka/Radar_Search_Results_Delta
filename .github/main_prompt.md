@@ -2,24 +2,13 @@
 
 This project uses a connected MCP server and local Python scripts to process Excel radar report files.
 
-## Main rule
-
-When the user asks to process a new radar report / Excel file, do not give the user manual commands to run.
-
-Instead, in Agent mode:
-1. Use the connected MCP server tool.
-2. Use VS Code terminal/tool execution yourself when needed.
-3. Only ask the user for missing required input, such as the file path or Download URL.
-4. Do not recreate report logic manually in chat.
-
 ## Expected workflow
 
 When a new Excel radar report needs to be processed:
 
-1. Identify the input file path or Download URL.
-   - Use the provided url by the user to pass it to the Radar MCP tool
+1. Use Radar MCP server tool responsible for processing/exporting Excel radar report files. 
 
-2. Use the MCP server tool responsible for processing/exporting Excel radar report files.
+2. Export search results from https://radar.epam.com/share/search/6a99248e5e3af4aa20bfb33e 
 
 3. When calling the MCP tool, request/export the Excel file with:
    - Columns only:
@@ -31,11 +20,9 @@ When a new Excel radar report needs to be processed:
    - Pivot: false
 
 4. After the MCP tool returns the generated/downloadable Excel file:
-   - Save the file into the project `search_results` folder.
-   - Use a timestamped filename if possible.
-   - Do not ask the user to manually save the file unless the MCP server cannot access or download it.
+   - Ask the user to download the file from the provided URL and place in search_results folder.
 
-5. After the Excel file is saved into `search_results`, run the local pivot-generation script yourself from the workspace root:
+5. When new file appears in `search_results` folder, run the local pivot-generation script yourself from the workspace root:
 
    Use the project virtual environment Python if available:
 
