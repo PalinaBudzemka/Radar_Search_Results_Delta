@@ -15,16 +15,16 @@ output_file = f"delta_results/delta_results_{timestamp}.xlsx"
 
 def find_latest_two_pivot_files():
     files = [
-        path for path in Path(".").rglob("*.xlsx")
-        if "pivot_output" in path.name and not path.name.startswith("~$")
+        path for path in Path("search_results").glob("*.xlsx")
+        if "RADAR Positions" in path.name and not path.name.startswith("~$")
     ]
 
     if len(files) < 2:
         raise Exception(
-            'Need at least two Excel files with "pivot_output" in the filename.'
+            'Need at least two Excel files with "RADAR Positions" in the filename.'
         )
 
-    files = sorted(files, key=os.path.getmtime, reverse=True)
+    files = sorted(files, key=lambda path: path.name, reverse=True)
 
     latest = files[0]
     previous = files[1]
@@ -33,7 +33,7 @@ def find_latest_two_pivot_files():
 
 
 def read_positions(file_path):
-    df = pd.read_excel(file_path, sheet_name="Original Positions")
+    df = pd.read_excel(file_path, sheet_name="Positions")
 
     if "Position ID" not in df.columns:
         raise Exception(f"'Position ID' column not found in {file_path}")
@@ -107,6 +107,25 @@ def read_summary(file_path):
     sheet_names = workbook.sheet_names
     sheet_name = "Tracker" if "Tracker" in sheet_names else "Summary"
     df = pd.read_excel(file_path, sheet_name=sheet_name)
+
+    if not {"Customer", "Project", "Headcount"}.issubset(df.columns):
+        positions_df = pd.read_excel(file_path, sheet_name="Positions")
+        positions_df["Customer"] = positions_df["Customer"].fillna("").astype(str).str.strip()
+        positions_df["Project"] = positions_df["Project"].fillna("").astype(str).str.strip()
+
+        project_counts = (
+            positions_df[positions_df["Project"] != ""]
+            .groupby(["Customer", "Project"])
+            .size()
+            .reset_index(name="Headcount")
+        )
+        customer_counts = (
+            positions_df.groupby("Customer")
+            .size()
+            .reset_index(name="Headcount")
+        )
+        customer_counts["Project"] = ""
+        df = pd.concat([customer_counts, project_counts], ignore_index=True)
 
     if "Headcount" not in df.columns and "Count of Position ID" in df.columns:
         df = df.rename(columns={"Count of Position ID": "Headcount"})

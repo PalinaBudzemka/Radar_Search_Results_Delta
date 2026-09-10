@@ -22,29 +22,20 @@ When a new Excel radar report needs to be processed:
 4. After the MCP tool returns the generated/downloadable Excel file:
    - Ask the user to download the file from the provided URL and place in search_results folder.
 
-5. When new file appears in `search_results` folder, run the local pivot-generation script yourself from the workspace root:
+5. When new file with current date appears in `search_results` folder, ask the user to approve run the local delta-generation script yourself from the workspace root:
 
    Use the project virtual environment Python if available:
 
-   `.venv/bin/python3 create_pivot.py`
+   `.venv/bin/python3 compare_search_results.py`
 
-   If the script requires an input argument, pass the saved Excel file path:
 
-   `.venv/bin/python3 create_pivot.py search_results/<saved_file_name>.xlsx`
+6. Wait until `create_search_results.py` finishes successfully.
 
-6. Wait until `create_pivot.py` finishes successfully.
+7. Delete the file from `search_results` folder
 
-7. Then run the comparison script yourself from the workspace root:
-
-   `.venv/bin/python3 compare_pivots.py`
-
-8. Wait until `compare_pivots.py` finishes successfully.
-
-9. Report back to the user with:
+8. Report back to the user with:
    - Saved source Excel file path
-   - Generated `pivot_output_*.xlsx` file
    - Generated `delta_report_*.xlsx` file, if created
-   - Whether comparison was performed
    - Any errors encountered
 
 ## Important behavior rules
@@ -56,8 +47,7 @@ When a new Excel radar report needs to be processed:
 - Do not manually analyze the Excel data in chat.
 - Do not manually recreate pivot or delta logic in chat.
 - Prefer using existing scripts:
-  - `create_pivot.py`
-  - `compare_pivots.py`
+  - `compare_search_results.py`
 
 ## Working directory
 
