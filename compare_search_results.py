@@ -257,42 +257,45 @@ def compare_summary_tabs(latest_file, previous_file):
     return added_customers, removed_customers, decreased_projects, increased_projects
 
 
-def build_project_status_reports(delta_positions_df):
-    positions = delta_positions_df[delta_positions_df["Project"] != ""].copy()
-    rows = []
+def build_project_status_reports(latest_file, previous_file):
+    latest_positions = read_positions(latest_file)
+    previous_positions = read_positions(previous_file)
 
-    for (customer, project), project_rows in positions.groupby(
-        ["Customer", "Project"], dropna=False
-    ):
-        statuses = set(project_rows["Headcount status"])
-        previous_count = len(
-            project_rows[~project_rows["Headcount status"].isin(["New Project", "Ramp-Up"])]
-        )
-        latest_count = len(
-            project_rows[~project_rows["Headcount status"].isin(["Ramp-Down", "Project Closure"])]
-        )
+    latest_counts = (
+        latest_positions[latest_positions["Project"] != ""]
+        .groupby(["Customer", "Project"])
+        .size()
+        .rename("Latest Count")
+    )
+    previous_counts = (
+        previous_positions[previous_positions["Project"] != ""]
+        .groupby(["Customer", "Project"])
+        .size()
+        .rename("Previous Count")
+    )
 
-        if statuses == {"New Project"}:
-            status = "New Project"
-        elif statuses == {"Project Closure"}:
-            status = "Project Closure"
-        elif "Ramp-Up" in statuses:
-            status = "Ramp-Up"
-        elif "Ramp-Down" in statuses:
-            status = "Ramp-Down"
-        else:
-            continue
+    project_status_df = pd.concat([previous_counts, latest_counts], axis=1).fillna(0)
+    project_status_df["Previous Count"] = project_status_df["Previous Count"].astype(int)
+    project_status_df["Latest Count"] = project_status_df["Latest Count"].astype(int)
+    project_status_df["Delta"] = (
+        project_status_df["Latest Count"] - project_status_df["Previous Count"]
+    )
+    project_status_df = project_status_df.reset_index()
 
-        rows.append({
-            "Customer": customer,
-            "Project": project,
-            "Previous Count": previous_count,
-            "Latest Count": latest_count,
-            "Delta": latest_count - previous_count,
-            "Headcount Status": status,
-        })
+    def get_project_status(row):
+        if row["Previous Count"] == 0:
+            return "New Project"
+        if row["Latest Count"] == 0:
+            return "Project Closure"
+        if row["Delta"] > 0:
+            return "Ramp-Up"
+        if row["Delta"] < 0:
+            return "Ramp-Down"
+        return "Unchanged"
 
-    project_status_df = pd.DataFrame(rows)
+    project_status_df["Headcount Status"] = project_status_df.apply(
+        get_project_status, axis=1
+    )
     if project_status_df.empty:
         empty_columns = [
             "Customer", "Project", "Previous Count", "Latest Count", "Delta",
@@ -396,11 +399,8 @@ def format_workbook(file_path):
     wb.save(file_path)
 
 
-def build_delta_summary(delta_positions_df, previous_file):
-    current_positions = delta_positions_df[
-        ~delta_positions_df["Headcount status"].isin(["Ramp-Down", "Project Closure"])
-    ].copy()
-
+def build_delta_summary(latest_file, previous_file):
+    current_positions = read_positions(latest_file)
     project_counts = (
         current_positions.groupby(["Customer", "Project"], dropna=False)["Position ID"]
         .count()
@@ -493,7 +493,8 @@ delta_positions_df, added_count, removed_count, unchanged_count, latest_total, p
 )
 
 new_projects_df, project_closure_df, ramp_up_df, ramp_down_df = build_project_status_reports(
-    delta_positions_df
+    latest_file,
+    previous_file,
 )
 
 run_summary_df = pd.DataFrame({
@@ -527,7 +528,7 @@ run_summary_df = pd.DataFrame({
 
 with pd.ExcelWriter(output_file, engine="openpyxl") as writer:
     run_summary_df.to_excel(writer, sheet_name="Run Summary", index=False)
-    build_delta_summary(delta_positions_df, previous_file).to_excel(
+    build_delta_summary(latest_file, previous_file).to_excel(
         writer, sheet_name="Tracker", index=False
     )
     delta_positions_df.to_excel(writer, sheet_name="Delta Positions", index=False)
